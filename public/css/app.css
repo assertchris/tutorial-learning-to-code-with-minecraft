@@ -1,0 +1,8 @@
+body {
+    margin: 0;
+    padding: 50px;
+    cursor: default;
+    font-family: helvetica, arial, sans-serif;
+    font-size: 14px;
+    color: #333;
+}

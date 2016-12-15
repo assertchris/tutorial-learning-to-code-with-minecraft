@@ -1,0 +1,11 @@
+{
+    "require": {
+        "amphp/aerys": "^0.4.3",
+        "theory/builder": "^0.0.1"
+    },
+    "autoload": {
+        "classmap": [
+            "src"
+        ]
+    }
+}
