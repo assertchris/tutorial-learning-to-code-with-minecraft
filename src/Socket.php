@@ -6,9 +6,11 @@ use Aerys\Websocket;
 use Aerys\Websocket\Endpoint;
 use Aerys\Websocket\Message;
 use Amp\File;
+use Amp\Coroutine;
+use AsyncInterop\Loop;
 use Theory\Builder\Client;
 
-    class Socket implements Websocket
+class Socket implements Websocket
 {
     /**
      * @var Endpoint
@@ -38,7 +40,7 @@ use Theory\Builder\Client;
     /**
      * @var string
      */
-    private $waitingCoordinates = "1098 16 45";
+    private $waitingCoordinates = "471 27 -381";
 
     /**
      * @var Game[]
@@ -62,7 +64,9 @@ use Theory\Builder\Client;
     {
         $this->builder = $builder;
 
-        Amp\File\put($this->path, "");
+        Loop::execute(Amp\wrap(function() {
+            yield Amp\File\put($this->path, "");
+        }));
     }
 
     /**
@@ -74,8 +78,8 @@ use Theory\Builder\Client;
     {
         $this->endpoint = $endpoint;
 
-        Amp\repeat(function () {
-            $newLines = yield Amp\resolve($this->getNewLines());
+        Loop::repeat(500, Amp\wrap(function() {
+            $newLines = yield $this->getNewLines();
 
             foreach ($newLines as $line) {
                 preg_match("/(\\S+) joined the game/", $line, $matches);
@@ -84,7 +88,7 @@ use Theory\Builder\Client;
                     $this->initiatePlayer($matches[1]);
                 }
             }
-        }, 500);
+        }));
     }
 
     /**
@@ -96,20 +100,24 @@ use Theory\Builder\Client;
      */
     private function getNewLines()
     {
-        $time = yield Amp\File\mtime($this->path);
+        $generator = function() {
+            $time = yield Amp\File\mtime($this->path);
 
-        if ($this->logTime !== $time) {
-            $body = yield Amp\File\get($this->path);
+            if ($this->logTime !== $time) {
+                $body = yield Amp\File\get($this->path);
 
-            $allLines = explode(PHP_EOL, $body);
-            $newLines = array_slice($allLines, $this->logLines);
+                $allLines = explode(PHP_EOL, $body);
+                $newLines = array_slice($allLines, $this->logLines);
 
-            $this->logLines = count($allLines);
+                $this->logLines = count($allLines);
 
-            return array_filter($newLines);
-        }
+                return array_filter($newLines);
+            }
 
-        return [];
+            return [];
+        };
+
+        return new Amp\Coroutine($generator());
     }
 
     /**
@@ -167,14 +175,15 @@ use Theory\Builder\Client;
     public function onData(int $client, Message $message)
     {
         $raw = yield $message;
-
         $parsed = json_decode($raw, true);
 
         if ($parsed["type"] === "players") {
-            $this->endpoint->send($client, json_encode([
+            $payload = json_encode([
                 "type" => "players",
                 "data" => $this->players,
-            ]));
+            ]);
+
+            yield $this->endpoint->send($payload, $client);
         }
 
         if ($parsed["type"] === "join") {

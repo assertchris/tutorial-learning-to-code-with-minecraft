@@ -1,11 +1,14 @@
 {
     "require": {
-        "amphp/aerys": "^0.4.3",
+        "amphp/loop": "dev-master",
+        "amphp/aerys": "dev-amp_v2",
         "theory/builder": "^0.0.1"
     },
     "autoload": {
         "classmap": [
             "src"
         ]
-    }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
 }
