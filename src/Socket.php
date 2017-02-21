@@ -85,7 +85,13 @@ class Socket implements Websocket
                 preg_match("/(\\S+) joined the game/", $line, $matches);
 
                 if (count($matches) === 2) {
-                    $this->initiatePlayer($matches[1]);
+                    yield $this->playerJoined($matches[1]);
+                }
+
+                preg_match("/(\\S+) left the game/", $line, $matches);
+
+                if (count($matches) === 2) {
+                    yield $this->playerLeft($matches[1]);
                 }
             }
         }));
@@ -123,12 +129,59 @@ class Socket implements Websocket
     /**
      * @param string $player
      */
-    private function initiatePlayer(string $player)
+    private function playerJoined(string $player)
     {
-        $this->players[$player] = $player;
+        $generator = function() use ($player) {
+            $this->players[$player] = $player;
 
-        $this->builder->exec("/gamemode a {$player}");
-        $this->builder->exec("/tp {$player} {$this->waitingCoordinates}");
+            yield $this->broadcast([
+                "type" => "player-joined",
+                "data" => $player,
+            ]);
+
+            $this->builder->exec("/gamemode a {$player}");
+            $this->builder->exec("/tp {$player} {$this->waitingCoordinates}");
+        };
+
+        return new Amp\Coroutine($generator());
+    }
+
+    /**
+     * @param mixed $payload
+     *
+     * @return Amp\Coroutine
+     */
+    private function broadcast($payload) {
+        $generator = function() use ($payload) {
+            $payload = json_encode($payload);
+
+            yield $this->endpoint->broadcast($payload);
+        };
+
+        return new Amp\Coroutine($generator());
+    }
+
+    /**
+     * @param string $player
+     */
+    private function playerLeft(string $player)
+    {
+        $generator = function() use ($player) {
+            unset($this->players[$player]);
+
+            yield $this->broadcast([
+                "type" => "player-left",
+                "data" => $player,
+            ]);
+
+            foreach ($this->games as $i => $game) {
+                if ($game->hasPlayer($player)) {
+                    unset($this->games[$i]);
+                }
+            }
+        };
+
+        return new Amp\Coroutine($generator());
     }
 
     /**
@@ -177,25 +230,42 @@ class Socket implements Websocket
         $raw = yield $message;
         $parsed = json_decode($raw, true);
 
-        if ($parsed["type"] === "players") {
-            $payload = json_encode([
-                "type" => "players",
-                "data" => $this->players,
+        if ($parsed["type"] === "get-players") {
+            yield $this->send($client, [
+                "type" => "get-players",
+                "data" => array_values($this->players),
             ]);
-
-            yield $this->endpoint->send($payload, $client);
         }
 
         if ($parsed["type"] === "join") {
             $player = $parsed["data"];
 
+            yield $this->send($client, [
+                "type" => "joined"
+            ]);
+
             $this->builder->exec(
                 "/w {$player} Your friend has joined"
             );
 
-            $game = new Game($player, $client);
-            $this->games[$player] = $game;
+            array_push($this->games, new Game($player, $client));
         }
+    }
+
+    /**
+     * @param int $client
+     * @param mixed $payload
+     *
+     * @return Amp\Coroutine
+     */
+    private function send($client, $payload) {
+        $generator = function() use ($payload, $client) {
+            $payload = json_encode($payload);
+
+            yield $this->endpoint->send($payload, $client);
+        };
+
+        return new Amp\Coroutine($generator());
     }
 
     /**
@@ -209,9 +279,9 @@ class Socket implements Websocket
     {
         unset($this->connections[$client]);
 
-        foreach ($this->games as $player => $game) {
+        foreach ($this->games as $i => $game) {
             if ($game->hasCoder($client)) {
-                unset($this->games[$player]);
+                unset($this->games[$i]);
 
                 $this->builder->exec(
                     "/w {$player} Your friend has left"
@@ -226,5 +296,10 @@ class Socket implements Websocket
     public function onStop()
     {
         // ...intentionally left blank
+    }
+
+    public function getGames()
+    {
+        return $this->games;
     }
 }

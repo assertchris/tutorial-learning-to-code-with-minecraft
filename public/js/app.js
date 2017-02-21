@@ -21,15 +21,15 @@ var players = []
 var $players = document.querySelector(".players")
 
 socket.addEventListener("open", function () {
-    setInterval(function() {
-        socket.send(JSON.stringify({
-            "type": "players"
-        }))
-    }, 1000)
+    socket.send(JSON.stringify({
+        "type": "get-players"
+    }))
 })
 
 socket.addEventListener("message", function (e) {
     var parsed = JSON.parse(e.data)
+
+    console.log(parsed);
 
     if (parsed.type === "players") {
         players = parsed.data
