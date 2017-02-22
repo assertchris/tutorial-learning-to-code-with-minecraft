@@ -1,59 +1,169 @@
-if (!Element.prototype.matches) {
-    Element.prototype.matches =
-        Element.prototype.matchesSelector ||
-        Element.prototype.mozMatchesSelector ||
-        Element.prototype.msMatchesSelector ||
-        Element.prototype.oMatchesSelector ||
-        Element.prototype.webkitMatchesSelector ||
-        function(s) {
-            var matches = (this.document || this.ownerDocument).querySelectorAll(s)
-            var i = matches.length
-
-            while (--i >= 0 && matches.item(i) !== this) {}
-
-            return i > -1
-        }
+function Game() {
+    return React.createElement(
+        "h1", null, "Game"
+    )
 }
 
-var socket = new WebSocket("ws://localhost:8080/ws")
+class Player extends React.Component {
+    constructor(...params) {
+        super(...params)
 
-var players = []
-var $players = document.querySelector(".players")
-
-socket.addEventListener("open", function () {
-    socket.send(JSON.stringify({
-        "type": "get-players"
-    }))
-})
-
-socket.addEventListener("message", function (e) {
-    var parsed = JSON.parse(e.data)
-
-    console.log(parsed);
-
-    if (parsed.type === "players") {
-        players = parsed.data
-        $players.innerHTML = ""
-
-        for (var player in players) {
-            var $player = document.createElement("li");
-
-            $player.innerHTML = "<a href='#' data-player='" + player + "'>" + player + "</a>"
-
-            $players.appendChild($player)
-        }
+        this.onClick = this.onClick.bind(this)
     }
-})
 
-var $body = document.querySelector("body")
-
-$body.addEventListener("click", function(e) {
-    if (e.target.matches(".players a")) {
+    onClick(e) {
         e.preventDefault()
 
-        socket.send(JSON.stringify({
-            "type": "join",
-            "data": e.target.getAttribute("data-player")
-        }))
+        this.props.onJoin(this.props.name)
     }
-})
+
+    render() {
+        return React.createElement(
+            "a",
+            {
+                "onClick": this.onClick,
+                "className": "player",
+                "href": "#",
+            },
+            this.props.name
+        )
+    }
+}
+
+function PlayerList(props) {
+    return React.createElement(
+        "div",
+        {
+            "className": "player-list"
+        },
+        [
+            React.createElement(
+                "h1",
+                {
+                    "key": "heading",
+                },
+                "Player List"
+            ),
+            props.players.map(player => {
+                return React.createElement(
+                    Player,
+                    {
+                        "key": player,
+                        "name": player,
+                        "onJoin": props.onJoin,
+                    }
+                )
+            }),
+        ]
+    )
+}
+
+class App extends React.Component {
+    constructor(...params) {
+        super(...params)
+
+        this.state = {
+            "player": null,
+            "players": [],
+        }
+
+        this.onJoin = this.onJoin.bind(this)
+        this.onMessage = this.onMessage.bind(this)
+    }
+
+    send(payload) {
+        this.socket.send(JSON.stringify(payload))
+    }
+
+    onJoin(name) {
+        this.setState({
+            "player": name,
+        })
+
+        this.send({
+            "type": "join",
+            "data": name,
+        })
+    }
+
+    onMessage(e) {
+        let parsed = JSON.parse(e.data)
+
+        console.log(parsed)
+
+        if (parsed.type === "get-players") {
+            this.setState({
+                "players": parsed.data
+            })
+        }
+
+        if (parsed.type === "player-joined") {
+            this.setState({
+                "players": this.state.players
+                    .filter(player => player !== parsed.data)
+                    .concat([parsed.data])
+            })
+        }
+
+        if (parsed.type === "player-left") {
+            this.setState({
+                "players": this.state.players
+                    .filter(player => player !== parsed.data)
+            })
+
+            if (this.state.player == parsed.data) {
+                this.setState({
+                    "player": null,
+                })
+            }
+        }
+    }
+
+    componentWillMount() {
+        this.socket = new WebSocket(
+            "ws://127.0.0.1:8080/ws"
+        )
+
+        this.socket.addEventListener("open", e => {
+            this.socket.addEventListener(
+                "message", this.onMessage
+            )
+
+            this.send({
+                "type": "get-players"
+            })
+        })
+    }
+
+    componentWillUnmount() {
+        this.socket.removeEventListener(
+            "message", this.onMessage
+        )
+
+        this.socket = null
+    }
+
+    render() {
+        let child = null
+
+        if (this.state.player) {
+            child = React.createElement(Game, {
+                "player": this.state.player
+            })
+        } else {
+            child = React.createElement(PlayerList, {
+                "players": this.state.players,
+                "onJoin": this.onJoin
+            })
+        }
+
+        return React.createElement(
+            "div", {"className": "message"}, child
+        )
+    }
+}
+
+ReactDOM.render(
+    React.createElement(App),
+    document.querySelector(".app")
+)

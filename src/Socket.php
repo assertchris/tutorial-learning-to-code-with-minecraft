@@ -45,12 +45,17 @@ class Socket implements Websocket
     /**
      * @var Game[]
      */
-    private $games = [];
+    public $games = [];
 
     /**
      * @var string[]
      */
     private $players = [];
+
+    /**
+     * @var int[][]
+     */
+    public $positions = [];
 
     /**
      * @var string
@@ -67,6 +72,29 @@ class Socket implements Websocket
         Loop::execute(Amp\wrap(function() {
             yield Amp\File\put($this->path, "");
         }));
+
+        $this->setPositions();
+    }
+
+    private function setPositions()
+    {
+        $parts = explode(" ", $this->waitingCoordinates);
+
+        $x = $parts[0] - 11;
+        $y = 4;
+        $z = $parts[2] - 11;
+
+        $this->positions = [
+            Game::POSITION_NORTH_WEST => [$x - 22 - 3, $y, $z - 22 - 3],
+            Game::POSITION_NORTH => [$x - 22 - 3, $y, $z],
+            Game::POSITION_NORTH_EAST => [$x - 22 - 3, $y, $z + 22 + 3],
+            Game::POSITION_WEST => [$x, $y, $z - 22 - 3],
+            Game::POSITION_ORIGIN => [$x, $y, $z],
+            Game::POSITION_EAST => [$x, $y, $z + 22 + 3],
+            Game::POSITION_SOUTH_WEST => [$x + 22 + 3, $y, $z - 22 - 3],
+            Game::POSITION_SOUTH => [$x + 22 + 3, $y, $z],
+            Game::POSITION_SOUTH_EAST => [$x + 22 + 3, $y, $z + 22 + 3],
+        ];
     }
 
     /**
@@ -284,7 +312,7 @@ class Socket implements Websocket
                 unset($this->games[$i]);
 
                 $this->builder->exec(
-                    "/w {$player} Your friend has left"
+                    "/w {$game->player} Your friend has left"
                 );
             }
         }
@@ -296,10 +324,5 @@ class Socket implements Websocket
     public function onStop()
     {
         // ...intentionally left blank
-    }
-
-    public function getGames()
-    {
-        return $this->games;
     }
 }
